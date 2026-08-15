@@ -84,6 +84,28 @@ export default function DataBridgeAI() {
 
   const src = SOURCE_TYPES.find(s => s.id === sourceType);
 
+  const getSourceParts = (mapping) => {
+    if (!mapping.source) return { table: "—", column: "—" };
+    const known = sourceSchema.find(column => column.name === mapping.source);
+    const parts = String(mapping.source).split(".");
+    return {
+      table: mapping.sourceTable || known?.table || (parts.length > 1 ? parts.slice(0, -1).join(".") : "—"),
+      column: mapping.sourceColumn || known?.column || parts.at(-1),
+    };
+  };
+
+  const setMappingSource = (index, source) => {
+    const known = sourceSchema.find(column => column.name === source);
+    const parts = String(source || "").split(".");
+    setMappingConfirmed(false);
+    setMappings(current => current.map((mapping, currentIndex) => currentIndex === index ? {
+      ...mapping,
+      source: source || null,
+      sourceTable: source ? (known?.table || (parts.length > 1 ? parts.slice(0, -1).join(".") : null)) : null,
+      sourceColumn: source ? (known?.column || parts.at(-1)) : null,
+    } : mapping));
+  };
+
   // ── Connect ─────────────────────────────────────────────────────────────────
   async function handleConnect() {
     setConnecting(true); setConnError("");
@@ -257,7 +279,7 @@ export default function DataBridgeAI() {
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         .chat-user{background:#1d4ed8;color:#fff;padding:8px 12px;border-radius:10px 10px 2px 10px;font-size:13px;max-width:82%;align-self:flex-end}
         .chat-ai{background:#1e293b;border:1px solid #1e3a5f;color:#e2e8f0;padding:8px 12px;border-radius:10px 10px 10px 2px;font-size:13px;max-width:88%}
-        .mrow{display:grid;grid-template-columns:1.4fr .6fr 1.1fr .6fr 1.8fr;gap:8px;align-items:start;padding:9px 0;border-bottom:1px solid #1e3a5f22}
+        .mrow{display:grid;grid-template-columns:1.2fr .55fr 1fr 1fr 1.1fr 1.5fr;gap:8px;align-items:start;padding:9px 0;border-bottom:1px solid #1e3a5f22}
         .mrow:last-child{border-bottom:none}
         .step-dot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;cursor:pointer;transition:all .2s;flex-shrink:0}
       `}</style>
@@ -429,7 +451,7 @@ export default function DataBridgeAI() {
         {step === 2 && (
           <div>
             <h2 style={{ fontFamily:"'Space Grotesk',sans-serif", fontSize:22, fontWeight:600, color:"#f1f5f9", marginBottom:4 }}>AI Column Mapping</h2>
-            <p style={{ color:"#64748b", fontSize:13, marginBottom:22 }}>Mapping layout: <b style={{ color:"#60a5fa" }}>{selectedLayout || "custom layout"}</b>. Azure GPT-4o uses historical assumptions only as reference.</p>
+            <p style={{ color:"#64748b", fontSize:13, marginBottom:22 }}>Mapping layout: <b style={{ color:"#60a5fa" }}>{selectedLayout || "custom layout"}</b>. Microsoft Foundry GPT-5.6 Sol uses historical assumptions only as reference.</p>
 
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
               <div className="card">
@@ -450,7 +472,7 @@ export default function DataBridgeAI() {
               <div className="card" style={{ textAlign:"center", padding:40 }}>
                 <div style={{ fontSize:40, marginBottom:14 }}>🧠</div>
                 <div style={{ fontFamily:"'Space Grotesk',sans-serif", fontSize:16, color:"#e2e8f0", marginBottom:8 }}>Ready for AI Analysis</div>
-                <div style={{ fontSize:13, color:"#64748b", marginBottom:24 }}>Azure GPT-4o will propose mappings from the latest layout and source schema.</div>
+                <div style={{ fontSize:13, color:"#64748b", marginBottom:24 }}>Microsoft Foundry GPT-5.6 Sol will propose mappings from the latest layout and source schema.</div>
                 <button className="btn" style={{ fontSize:14, padding:"12px 28px" }} onClick={runAIMapping} disabled={aiThinking}>
                   {aiThinking ? <span className="pulse">Analyzing...</span> : "⚡ Run AI Mapping"}
                 </button>
@@ -462,8 +484,8 @@ export default function DataBridgeAI() {
                   Suggested Mappings
                   <button className="btn btn-ghost" style={{ fontSize:11, padding:"4px 10px", marginLeft:10 }} onClick={()=>{setMappings([]);setAiLog([])}}>↺ Redo</button>
                 </div>
-                <div style={{ display:"grid", gridTemplateColumns:"1.4fr .6fr 1.1fr .6fr 1.8fr", gap:8, padding:"5px 0", borderBottom:"1px solid #1e3a5f" }}>
-                  {["Target","Confidence","AI Source","Override","Transform"].map(h=><div key={h} style={{ fontSize:10,color:"#4b6074",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em" }}>{h}</div>)}
+                <div style={{ display:"grid", gridTemplateColumns:"1.2fr .55fr 1fr 1fr 1.1fr 1.5fr", gap:8, padding:"5px 0", borderBottom:"1px solid #1e3a5f" }}>
+                  {["Target","Confidence","Source Table","Source Column","Override","Transform"].map(h=><div key={h} style={{ fontSize:10,color:"#4b6074",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em" }}>{h}</div>)}
                 </div>
                 {mappings.map((m,i) => (
                   <div key={i} className="mrow">
@@ -473,9 +495,12 @@ export default function DataBridgeAI() {
                     </div>
                     <span className={`badge-${m.confidence==="high"?"high":m.confidence==="medium"?"med":"low"}`}>{m.confidence}</span>
                     <div style={{ fontSize:12,color:"#e2e8f0",background:m.source?"#0f172a":"#1a0808",padding:"4px 8px",borderRadius:4,border:`1px solid ${m.source?"#1e3a5f":"#7f1d1d"}` }}>
-                      {m.source||"⚠ no match"}
+                      {getSourceParts(m).table}
                     </div>
-                    <select className="select" value={m.source||""} onChange={e=>{setMappingConfirmed(false);setMappings(p=>p.map((x,j)=>j===i?{...x,source:e.target.value||null}:x))}}>
+                    <div style={{ fontSize:12,color:"#e2e8f0",background:m.source?"#0f172a":"#1a0808",padding:"4px 8px",borderRadius:4,border:`1px solid ${m.source?"#1e3a5f":"#7f1d1d"}` }}>
+                      {getSourceParts(m).column}
+                    </div>
+                    <select className="select" value={m.source||""} onChange={e=>setMappingSource(i, e.target.value)}>
                       <option value="">-- none --</option>
                       {(sourceSchema.length>0?sourceSchema.map(c=>c.name):["cust_id","first_name","last_name","email","mobile","dob","addr1","city_name","country","status_cd","created_at","is_active","phone_no"]).map(c=><option key={c}>{c}</option>)}
                     </select>

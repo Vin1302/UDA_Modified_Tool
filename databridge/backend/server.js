@@ -54,6 +54,62 @@ const safeIdentifier = (value, label = "identifier") => {
   return value;
 };
 
+const mappingResponseFormat = {
+  type: "json_schema",
+  json_schema: {
+    name: "claimsphere_column_mapping",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        mappings: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              target: { type: "string" },
+              source: { anyOf: [{ type: "string" }, { type: "null" }] },
+              sourceTable: { anyOf: [{ type: "string" }, { type: "null" }] },
+              sourceColumn: { anyOf: [{ type: "string" }, { type: "null" }] },
+              confidence: { type: "string", enum: ["high", "medium", "low"] },
+              reason: { type: "string" },
+              transform: { anyOf: [{ type: "string" }, { type: "null" }] },
+            },
+            required: ["target", "source", "sourceTable", "sourceColumn", "confidence", "reason", "transform"],
+          },
+        },
+        joinPlan: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            required: { type: "boolean" },
+            tables: { type: "array", items: { type: "string" } },
+            conditions: { type: "array", items: { type: "string" } },
+            notes: { type: "string" },
+          },
+          required: ["required", "tables", "conditions", "notes"],
+        },
+      },
+      required: ["mappings", "joinPlan"],
+    },
+  },
+};
+
+function normalizeMappingSource(mapping) {
+  const source = typeof mapping.source === "string" && mapping.source.trim() ? mapping.source.trim() : null;
+  const parts = source ? source.split(".") : [];
+  const sourceColumn = mapping.sourceColumn || (parts.length ? parts.at(-1) : null);
+  const sourceTable = mapping.sourceTable || (parts.length > 1 ? parts.slice(0, -1).join(".") : null);
+  return {
+    ...mapping,
+    source: source || (sourceTable && sourceColumn ? `${sourceTable}.${sourceColumn}` : sourceColumn),
+    sourceTable,
+    sourceColumn,
+  };
+}
+
 function readSpecification(filePath) {
   const workbook = xlsx.readFile(filePath, { cellDates: true });
   const ignored = new Set(["coverpage", "instructions", "summary", "source", "db details", "keyinfo", "operator crossref"]);
@@ -63,11 +119,11 @@ function readSpecification(filePath) {
   for (const sheetName of workbook.SheetNames) {
     if (ignored.has(sheetName.toLowerCase())) continue;
     const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" });
-    const headerRow = rows.findIndex(row => row.some(cell => /source column name|expected value|field name|target.*field/i.test(String(cell))));
+    const headerRow = rows.findIndex(row => row.some(cell => /source column name|expected value|field(?:\s+(?:header|column))?\s+name|target.*field/i.test(String(cell))));
     if (headerRow < 0) continue;
     const headers = rows[headerRow].map(value => String(value).trim());
-    const targetIndex = headers.findIndex(h => /^(field name|target.*field|source column name|column name)$/i.test(h)) >= 0
-      ? headers.findIndex(h => /^(field name|target.*field|source column name|column name)$/i.test(h))
+    const targetIndex = headers.findIndex(h => /^(field(?:\s+(?:header|column))?\s+name|target.*field|source column name|column name)$/i.test(h)) >= 0
+      ? headers.findIndex(h => /^(field(?:\s+(?:header|column))?\s+name|target.*field|source column name|column name)$/i.test(h))
       : 0;
     const typeIndex = headers.findIndex(h => /data\s*type/i.test(h));
     const descriptionIndex = headers.findIndex(h => /description|expected value/i.test(h));
@@ -275,8 +331,7 @@ SOURCE TABLES: ${JSON.stringify(sourceTables || [])}
 TARGET COLUMNS (with types and descriptions):
 ${JSON.stringify(effectiveTargets, null, 2)}
 
-Return ONLY a JSON object: {"mappings":[...],"joinPlan":{"required":boolean,"tables":[],"conditions":[],"notes":""}}.
-Each mapping is {"target":"TARGET_COLUMN_NAME","source":"table.column_or_null","confidence":"high|medium|low","reason":"brief reason","transform":null}.
+Return a mapping for every target. For each matched source, populate source, sourceTable, and sourceColumn using the exact values from SOURCE COLUMNS. Use null for all three when there is no match.
 
 Rules:
 - Every target column must have an entry
@@ -291,14 +346,20 @@ Rules:
       { role: "system", content: "You are a data mapping expert. Return only valid JSON." },
       { role: "user", content: prompt }
       ],
-      max_completion_tokens: 2000,
+      response_format: mappingResponseFormat,
+      max_completion_tokens: 16000,
     });
 
-    const text = response.choices[0].message.content.replace(/```json|```/g, "").trim();
+    const choice = response.choices[0];
+    if (choice.finish_reason === "length") {
+      throw new Error("The mapping response reached its output limit. Reduce the number of source columns or target fields and retry.");
+    }
+    const text = choice.message.content;
+    if (!text) throw new Error("Azure OpenAI returned an empty mapping response");
     const result = JSON.parse(text);
     const mappings = Array.isArray(result) ? result : result.mappings;
     if (!Array.isArray(mappings)) throw new Error("Azure OpenAI returned an invalid mapping response");
-    res.json({ success: true, mappings, joinPlan: result.joinPlan || { required: false, tables: [], conditions: [], notes: "" } });
+    res.json({ success: true, mappings: mappings.map(normalizeMappingSource), joinPlan: result.joinPlan || { required: false, tables: [], conditions: [], notes: "" } });
   } catch (err) {
     console.error("Azure OpenAI mapping failed:", err);
     const detail = err?.error?.message || err?.response?.data?.error?.message || err.message;
