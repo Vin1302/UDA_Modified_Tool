@@ -144,10 +144,6 @@ export default function DataBridgeAI() {
 
   // ── Fetch source schema ──────────────────────────────────────────────────────
   async function fetchSchema() {
-    if (!tableName.trim()) {
-      setAiLog(["❌ Enter one or more source table names before loading the schema."]);
-      return;
-    }
     setSchemaLoading(true);
     try {
       const res = await fetch(`${API}/api/schema`, {
@@ -160,18 +156,24 @@ export default function DataBridgeAI() {
         setSourceSchema(data.columns);
         setMappings([]); setMappingConfirmed(false);
         setJoinPlan({ required:false, tables:[], conditions:[], notes:"" });
-      } else setAiLog(["❌ No source columns were found for the entered table name(s)."]);
-    } catch { setAiLog(["❌ Could not load the source schema. Check the table name and database connection."]); }
+        setSchemaLoading(false);
+        return data.columns;
+      }
+      setAiLog(["❌ No source columns were found in the database."]);
+    } catch { setAiLog(["❌ Could not load the source schema. Check the database connection."]); }
     setSchemaLoading(false);
+    return [];
   }
 
   // ── AI Mapping ───────────────────────────────────────────────────────────────
   async function runAIMapping() {
-    if (!sourceSchema.length) {
-      setAiLog(["❌ Load the real source schema before running AI mapping. No sample tables or columns are used."]);
-      return;
-    }
     setAiThinking(true); setAiLog([]);
+    let schema = sourceSchema;
+    if (!schema.length) {
+      setAiLog(["📋 Discovering database tables and columns..."]);
+      schema = await fetchSchema();
+      if (!schema.length) { setAiThinking(false); return; }
+    }
     const steps = [
       "🔍 Analyzing target schema...",
       "📋 Reading source column metadata...",
@@ -183,13 +185,13 @@ export default function DataBridgeAI() {
       await new Promise(r => setTimeout(r, 500));
       setAiLog(p => [...p, s]);
     }
-    const sourceColumns = sourceSchema.map(c => c.name);
+    const sourceColumns = schema.map(c => c.name);
 
     try {
       const res = await fetch(`${API}/api/ai-mapping`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceColumns, sourceTables: tableName.split(",").map(x=>x.trim()).filter(Boolean), targetColumns: targetCols, layoutName: selectedLayout })
+        body: JSON.stringify({ sourceColumns, sourceTables: [...new Set(schema.map(c => c.table).filter(Boolean))], targetColumns: targetCols, layoutName: selectedLayout })
       });
       const data = await res.json();
       if (data.success) {
@@ -467,11 +469,11 @@ export default function DataBridgeAI() {
 
             <div className="card" style={{ display:"flex", alignItems:"end", gap:10, marginBottom:16 }}>
               <div style={{ flex:1 }}>
-                <label style={{ fontSize:11, color:"#64748b", display:"block", marginBottom:5 }}>Source table(s)</label>
-                <input className="inp" value={tableName} onChange={e=>setTableName(e.target.value)} placeholder="e.g. dbo.Member, dbo.MemberEnrollment" />
+                <label style={{ fontSize:11, color:"#64748b", display:"block", marginBottom:5 }}>Source table(s) — optional override</label>
+                <input className="inp" value={tableName} onChange={e=>setTableName(e.target.value)} placeholder="Leave blank for AI to inspect all database tables" />
               </div>
               <button className="btn btn-ghost" style={{ fontSize:12, whiteSpace:"nowrap" }} onClick={fetchSchema} disabled={schemaLoading}>
-                {schemaLoading ? <span className="pulse">Loading...</span> : "Reload schema"}
+                {schemaLoading ? <span className="pulse">Loading...</span> : "Load override"}
               </button>
             </div>
 

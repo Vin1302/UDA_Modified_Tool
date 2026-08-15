@@ -287,7 +287,12 @@ app.post("/api/schema", async (req, res) => {
           user: credentials.username, password: credentials.password,
           options: { encrypt: true, trustServerCertificate: true },
         });
-        for (const tableName of requestedTables) {
+        const tables = requestedTables.length ? requestedTables : (await pool.request().query(`
+          SELECT TABLE_SCHEMA + '.' + TABLE_NAME AS name
+          FROM INFORMATION_SCHEMA.TABLES
+          WHERE TABLE_TYPE = 'BASE TABLE'
+          ORDER BY TABLE_SCHEMA, TABLE_NAME`)).recordset.map(row => row.name);
+        for (const tableName of tables) {
           safeIdentifier(tableName, "table name");
           const bareTable = tableName.split(".").pop();
           const result = await pool.request().input("table", sql.NVarChar, bareTable)
