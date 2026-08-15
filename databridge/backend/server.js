@@ -53,8 +53,28 @@ function cosineSimilarity(a, b) {
 async function embedMappingText(text) {
   const model = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
   if (!model) return null;
-  const response = await azureClient.embeddings.create({ model, input: text });
-  return response.data[0].embedding;
+  if (!azureEndpoint || !process.env.AZURE_OPENAI_API_KEY) {
+    throw new Error("Azure endpoint and API key are required for RAG embeddings.");
+  }
+
+  // Foundry serverless embedding deployments use the Model Inference endpoint,
+  // not the OpenAI-compatible /openai/v1 endpoint used by the GPT deployment.
+  const response = await fetch(`${azureEndpoint}/models/embeddings?api-version=2024-05-01-preview`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": process.env.AZURE_OPENAI_API_KEY,
+    },
+    body: JSON.stringify({ model, input: [text] }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Embeddings request failed (${response.status}): ${detail || response.statusText}`);
+  }
+  const body = await response.json();
+  const embedding = body?.data?.[0]?.embedding;
+  if (!Array.isArray(embedding)) throw new Error("Embeddings response contained no vector.");
+  return embedding;
 }
 function mappingMemoryText(targetColumns, sourceColumns) {
   return `Target layout: ${targetColumns.map(x => x.name).join(", ")}\nSource schema: ${sourceColumns.join(", ")}`;
