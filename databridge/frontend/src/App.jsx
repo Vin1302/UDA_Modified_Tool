@@ -50,7 +50,7 @@ export default function DataBridgeAI() {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connError, setConnError] = useState("");
-  const [tableName, setTableName] = useState("customers");
+  const [tableName, setTableName] = useState("");
   const [targetCols, setTargetCols] = useState(DEFAULT_TARGET_COLS);
   const [layouts, setLayouts] = useState([]);
   const [selectedLayout, setSelectedLayout] = useState("");
@@ -144,6 +144,10 @@ export default function DataBridgeAI() {
 
   // ── Fetch source schema ──────────────────────────────────────────────────────
   async function fetchSchema() {
+    if (!tableName.trim()) {
+      setAiLog(["❌ Enter one or more source table names before loading the schema."]);
+      return;
+    }
     setSchemaLoading(true);
     try {
       const res = await fetch(`${API}/api/schema`, {
@@ -152,13 +156,21 @@ export default function DataBridgeAI() {
         body: JSON.stringify({ sourceType, credentials: connFields, tableName })
       });
       const data = await res.json();
-      if (data.success && data.columns.length > 0) setSourceSchema(data.columns);
-    } catch {}
+      if (data.success && data.columns.length > 0) {
+        setSourceSchema(data.columns);
+        setMappings([]); setMappingConfirmed(false);
+        setJoinPlan({ required:false, tables:[], conditions:[], notes:"" });
+      } else setAiLog(["❌ No source columns were found for the entered table name(s)."]);
+    } catch { setAiLog(["❌ Could not load the source schema. Check the table name and database connection."]); }
     setSchemaLoading(false);
   }
 
   // ── AI Mapping ───────────────────────────────────────────────────────────────
   async function runAIMapping() {
+    if (!sourceSchema.length) {
+      setAiLog(["❌ Load the real source schema before running AI mapping. No sample tables or columns are used."]);
+      return;
+    }
     setAiThinking(true); setAiLog([]);
     const steps = [
       "🔍 Analyzing target schema...",
@@ -171,9 +183,7 @@ export default function DataBridgeAI() {
       await new Promise(r => setTimeout(r, 500));
       setAiLog(p => [...p, s]);
     }
-    const sourceColumns = sourceSchema.length > 0
-      ? sourceSchema.map(c => c.name)
-      : ["cust_id","first_name","last_name","email","mobile","dob","addr1","addr2","city_name","state","country","status_cd","created_at","updated_at","is_active","phone_no","zip_code"];
+    const sourceColumns = sourceSchema.map(c => c.name);
 
     try {
       const res = await fetch(`${API}/api/ai-mapping`, {
@@ -455,11 +465,23 @@ export default function DataBridgeAI() {
             <h2 style={{ fontFamily:"'Space Grotesk',sans-serif", fontSize:22, fontWeight:600, color:"#f1f5f9", marginBottom:4 }}>AI Column Mapping</h2>
             <p style={{ color:"#64748b", fontSize:13, marginBottom:22 }}>Mapping layout: <b style={{ color:"#60a5fa" }}>{selectedLayout || "custom layout"}</b>. Microsoft Foundry GPT-5.6 Sol uses historical assumptions only as reference.</p>
 
+            <div className="card" style={{ display:"flex", alignItems:"end", gap:10, marginBottom:16 }}>
+              <div style={{ flex:1 }}>
+                <label style={{ fontSize:11, color:"#64748b", display:"block", marginBottom:5 }}>Source table(s)</label>
+                <input className="inp" value={tableName} onChange={e=>setTableName(e.target.value)} placeholder="e.g. dbo.Member, dbo.MemberEnrollment" />
+              </div>
+              <button className="btn btn-ghost" style={{ fontSize:12, whiteSpace:"nowrap" }} onClick={fetchSchema} disabled={schemaLoading}>
+                {schemaLoading ? <span className="pulse">Loading...</span> : "Reload schema"}
+              </button>
+            </div>
+
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
               <div className="card">
                 <div style={{ fontSize:11, color:"#4b6074", marginBottom:10, textTransform:"uppercase", letterSpacing:"0.06em" }}>Source Columns</div>
                 <div style={{ display:"flex", flexWrap:"wrap" }}>
-                  {(sourceSchema.length>0 ? sourceSchema.map(c=>c.name) : ["cust_id","first_name","last_name","email","mobile","dob","addr1","city_name","country","status_cd","created_at","is_active","phone_no"]).map(c => <span key={c} className="tag">{c}</span>)}
+                  {sourceSchema.length > 0
+                    ? sourceSchema.map(c => <span key={c.name} className="tag">{c.name}</span>)
+                    : <span style={{ fontSize:12, color:"#64748b" }}>Load a source table schema to see real database columns.</span>}
                 </div>
               </div>
               <div className="card">
@@ -504,7 +526,7 @@ export default function DataBridgeAI() {
                     </div>
                     <select className="select" value={m.source||""} onChange={e=>setMappingSource(i, e.target.value)}>
                       <option value="">-- none --</option>
-                      {(sourceSchema.length>0?sourceSchema.map(c=>c.name):["cust_id","first_name","last_name","email","mobile","dob","addr1","city_name","country","status_cd","created_at","is_active","phone_no"]).map(c=><option key={c}>{c}</option>)}
+                      {sourceSchema.map(c=><option key={c.name}>{c.name}</option>)}
                     </select>
                     <div style={{ fontSize:11, color:"#94a3b8", padding:"7px 8px", background:"#0f172a", borderRadius:4 }}>
                       {targetCols.find(column => column.name === m.target)?.type || "source value"}

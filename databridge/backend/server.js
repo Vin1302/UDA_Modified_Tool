@@ -461,15 +461,16 @@ app.post("/api/extract", async (req, res) => {
   try {
     send("🔗 Connecting to data source...");
 
-    // Build SELECT with transforms
+    // Build a SELECT that preserves every target column in the chosen output layout.
     const targetTypes = new Map((Array.isArray(targetColumns) ? targetColumns : activeLayout)
       .map(target => [mappingTargetKey(target.name), target.type]));
     const selectClauses = mappings
-      .filter(m => m.source)
-      .map(m => buildSelectExpression(m, targetTypes.get(mappingTargetKey(m.target)), sourceType))
+      .map(m => m.source
+        ? buildSelectExpression(m, targetTypes.get(mappingTargetKey(m.target)), sourceType)
+        : `NULL AS ${safeIdentifier(m.target, "target column")}`)
       .join(", ");
 
-    if (!selectClauses) throw new Error("At least one confirmed source mapping is required");
+    if (!selectClauses) throw new Error("No target columns are available for extraction. Re-upload the output layout and run AI mapping again.");
     const extractionQuery = `SELECT ${selectClauses} FROM ${sourceFrom}`;
     sendQuery(extractionQuery);
 
