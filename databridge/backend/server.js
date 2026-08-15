@@ -59,7 +59,7 @@ async function embedMappingText(text) {
 
   // This Foundry project uses the current OpenAI-compatible v1 embedding API.
   // The older Model Inference preview API is not supported by all Foundry projects.
-  const response = await fetch(`${azureEndpoint}/openai/v1/embeddings?api-version=v1`, {
+  const response = await fetch(`${azureEndpoint}/openai/v1/embeddings`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
