@@ -233,27 +233,35 @@ export default function DataBridgeAI() {
   // ── Extract ──────────────────────────────────────────────────────────────────
   async function startExtraction() {
     setExtracting(true); setExtractLog([]); setExtractFiles([]); setExtractQuery("");
-    const res = await fetch(`${API}/api/extract`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sourceType, credentials: connFields, tableName, mappings, targetColumns: targetCols, rowsPerFile, outputPrefix, delimiter, includeHeader, confirmed: mappingConfirmed, fromClause: joinClause })
-    });
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done: rdone, value } = await reader.read();
-      if (rdone) break;
-      const lines = decoder.decode(value).split("\n").filter(l => l.startsWith("data:"));
-      for (const line of lines) {
-        try {
-          const obj = JSON.parse(line.slice(5));
-          if (obj.log) setExtractLog(p => [...p, obj.log]);
-          if (obj.file) setExtractFiles(p => [...p, obj.file]);
-          if (obj.query) setExtractQuery(obj.query);
-          if (obj.done) setDone(true);
-          if (obj.error) setExtractLog(p => [...p, `❌ ${obj.error}`]);
-        } catch {}
+    try {
+      const res = await fetch(`${API}/api/extract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceType, credentials: connFields, tableName, mappings, targetColumns: targetCols, rowsPerFile, outputPrefix, delimiter, includeHeader, confirmed: mappingConfirmed, fromClause: joinClause })
+      });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Extraction request failed (${res.status})`);
       }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done: rdone, value } = await reader.read();
+        if (rdone) break;
+        const lines = decoder.decode(value).split("\n").filter(l => l.startsWith("data:"));
+        for (const line of lines) {
+          try {
+            const obj = JSON.parse(line.slice(5));
+            if (obj.log) setExtractLog(p => [...p, obj.log]);
+            if (obj.file) setExtractFiles(p => [...p, obj.file]);
+            if (obj.query) setExtractQuery(obj.query);
+            if (obj.done) setDone(true);
+            if (obj.error) setExtractLog(p => [...p, `❌ ${obj.error}`]);
+          } catch {}
+        }
+      }
+    } catch (error) {
+      setExtractLog([`❌ ${error.message}`]);
     }
     setExtracting(false);
   }

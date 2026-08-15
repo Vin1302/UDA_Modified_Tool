@@ -494,7 +494,15 @@ app.post("/api/extract", async (req, res) => {
   if (!confirmed) return res.status(409).json({ error: "Mapping approval is required before extraction" });
   const delim = delimiter || "|";
   const rowLimit = Math.max(1, Number(rowsPerFile) || 10000);
-  const sourceFrom = fromClause ? String(fromClause).trim() : safeIdentifier(tableName, "table name");
+  const mappedTables = [...new Set((mappings || []).filter(mapping => mapping.source).map(mapping => {
+    if (mapping.sourceTable) return mapping.sourceTable;
+    const parts = String(mapping.source).split(".");
+    return parts.length > 1 ? parts.slice(0, -1).join(".") : "";
+  }).filter(Boolean))];
+  if (!fromClause && mappedTables.length > 1) {
+    return res.status(400).json({ error: "Mappings use multiple source tables. Enter and confirm a JOIN clause before extraction." });
+  }
+  const sourceFrom = fromClause ? String(fromClause).trim() : safeIdentifier(mappedTables[0] || tableName, "table name");
   if (fromClause && (!/^[A-Za-z0-9_.$\s=<>]+(?:\s+(?:INNER|LEFT|RIGHT|FULL|OUTER|JOIN|ON)\s+[A-Za-z0-9_.$\s=<>]+)*$/i.test(sourceFrom) || /(;|--|\/\*)/.test(sourceFrom))) {
     return res.status(400).json({ error: "Join clause contains unsupported characters. Review the confirmed join conditions." });
   }
