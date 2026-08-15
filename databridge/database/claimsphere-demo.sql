@@ -1,7 +1,13 @@
-/* Run once against a SQL Server instance using an account permitted to create databases. */
+/* WARNING: This resets the ClaimSphereDemo test database. Do not run against production. */
 USE master;
 GO
-IF DB_ID(N'ClaimSphereDemo') IS NULL CREATE DATABASE ClaimSphereDemo;
+IF DB_ID(N'ClaimSphereDemo') IS NOT NULL
+BEGIN
+  ALTER DATABASE ClaimSphereDemo SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+  DROP DATABASE ClaimSphereDemo;
+END;
+GO
+CREATE DATABASE ClaimSphereDemo;
 GO
 USE ClaimSphereDemo;
 GO

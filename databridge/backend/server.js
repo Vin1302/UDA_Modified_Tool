@@ -75,7 +75,7 @@ const mappingResponseFormat = {
               sourceColumn: { anyOf: [{ type: "string" }, { type: "null" }] },
               confidence: { type: "string", enum: ["high", "medium", "low"] },
               reason: { type: "string" },
-              transform: { anyOf: [{ type: "string" }, { type: "null" }] },
+              transform: { type: "null" },
             },
             required: ["target", "source", "sourceTable", "sourceColumn", "confidence", "reason", "transform"],
           },
@@ -128,6 +128,19 @@ function alignMappingsToLayout(mappings, targets) {
       transform: null,
     }))
     .map(mapping => ({ ...mapping, target: mappingTargetKey(mapping.target) }));
+}
+
+function buildSelectExpression(mapping, targetType, sourceType) {
+  const source = safeIdentifier(mapping.source, "source column");
+  const target = safeIdentifier(mapping.target, "target column");
+  const type = String(targetType || "").toLowerCase();
+  if (/date|time/.test(type)) {
+    if (sourceType === "postgres") return `TO_CHAR(${source}, 'YYYY-MM-DD') AS ${target}`;
+    if (sourceType === "mysql") return `DATE_FORMAT(${source}, '%Y-%m-%d') AS ${target}`;
+    return `CONVERT(CHAR(10), ${source}, 23) AS ${target}`;
+  }
+  if (/char|text|string/.test(type)) return `CAST(${source} AS VARCHAR(4000)) AS ${target}`;
+  return `${source} AS ${target}`;
 }
 
 function readSpecification(filePath) {
@@ -358,6 +371,7 @@ Rules:
 - Every target column must have an entry
 - Use null for source if no reasonable match exists
 - high = direct/semantic match, medium = needs transform or partial match, low = guessed
+- Always set transform to null. The backend applies any required SQL casts and date formatting.
 - Do not provide executable SQL joins. The user must supply or approve join conditions before extraction.`;
 
   try {
@@ -423,7 +437,7 @@ Help the user review, understand, and modify mappings. Be concise (max 3 sentenc
 // ROUTE: Extract data and split into text files (SSE streaming)
 // ─────────────────────────────────────────────────────────────────────────────
 app.post("/api/extract", async (req, res) => {
-  const { sourceType, credentials, tableName, mappings, rowsPerFile, outputPrefix, delimiter, includeHeader, confirmed, fromClause } = req.body;
+  const { sourceType, credentials, tableName, mappings, targetColumns, rowsPerFile, outputPrefix, delimiter, includeHeader, confirmed, fromClause } = req.body;
   if (!confirmed) return res.status(409).json({ error: "Mapping approval is required before extraction" });
   const delim = delimiter || "|";
   const rowLimit = Math.max(1, Number(rowsPerFile) || 10000);
@@ -448,14 +462,11 @@ app.post("/api/extract", async (req, res) => {
     send("🔗 Connecting to data source...");
 
     // Build SELECT with transforms
+    const targetTypes = new Map((Array.isArray(targetColumns) ? targetColumns : activeLayout)
+      .map(target => [mappingTargetKey(target.name), target.type]));
     const selectClauses = mappings
       .filter(m => m.source)
-      .map(m => {
-        safeIdentifier(m.target, "target column");
-        if (m.transform) return `${m.transform} AS ${m.target}`;
-        safeIdentifier(m.source, "source column");
-        return `${m.source} AS ${m.target}`;
-      })
+      .map(m => buildSelectExpression(m, targetTypes.get(mappingTargetKey(m.target)), sourceType))
       .join(", ");
 
     if (!selectClauses) throw new Error("At least one confirmed source mapping is required");

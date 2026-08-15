@@ -224,7 +224,7 @@ export default function DataBridgeAI() {
     const res = await fetch(`${API}/api/extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sourceType, credentials: connFields, tableName, mappings, rowsPerFile, outputPrefix, delimiter, includeHeader, confirmed: mappingConfirmed, fromClause: joinClause })
+      body: JSON.stringify({ sourceType, credentials: connFields, tableName, mappings, targetColumns: targetCols, rowsPerFile, outputPrefix, delimiter, includeHeader, confirmed: mappingConfirmed, fromClause: joinClause })
     });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -487,7 +487,7 @@ export default function DataBridgeAI() {
                   <button className="btn btn-ghost" style={{ fontSize:11, padding:"4px 10px", marginLeft:10 }} onClick={()=>{setMappings([]);setAiLog([])}}>↺ Redo</button>
                 </div>
                 <div style={{ display:"grid", gridTemplateColumns:"1.2fr .55fr 1fr 1fr 1.1fr 1.5fr", gap:8, padding:"5px 0", borderBottom:"1px solid #1e3a5f" }}>
-                  {["Target","Confidence","Source Table","Source Column","Override","Transform"].map(h=><div key={h} style={{ fontSize:10,color:"#4b6074",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em" }}>{h}</div>)}
+                  {["Target","Confidence","Source Table","Source Column","Override","Output Format"].map(h=><div key={h} style={{ fontSize:10,color:"#4b6074",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em" }}>{h}</div>)}
                 </div>
                 {mappings.map((m,i) => (
                   <div key={i} className="mrow">
@@ -506,7 +506,9 @@ export default function DataBridgeAI() {
                       <option value="">-- none --</option>
                       {(sourceSchema.length>0?sourceSchema.map(c=>c.name):["cust_id","first_name","last_name","email","mobile","dob","addr1","city_name","country","status_cd","created_at","is_active","phone_no"]).map(c=><option key={c}>{c}</option>)}
                     </select>
-                    <input className="inp" style={{ fontSize:11 }} placeholder="SQL transform (optional)" value={m.transform||""} onChange={e=>{setMappingConfirmed(false);setMappings(p=>p.map((x,j)=>j===i?{...x,transform:e.target.value}:x))}} />
+                    <div style={{ fontSize:11, color:"#94a3b8", padding:"7px 8px", background:"#0f172a", borderRadius:4 }}>
+                      {targetCols.find(column => column.name === m.target)?.type || "source value"}
+                    </div>
                   </div>
                 ))}
               </div>
