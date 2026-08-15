@@ -40,6 +40,47 @@ const azureClient = new OpenAI({
   apiKey: process.env.AZURE_OPENAI_API_KEY,
   baseURL: `${azureEndpoint}/openai/v1/`,
 });
+const RAG_STORE_PATH = path.join(__dirname, "data", "approved-mappings.json");
+
+function readRagStore() {
+  try { return JSON.parse(fs.readFileSync(RAG_STORE_PATH, "utf8")); } catch { return []; }
+}
+function cosineSimilarity(a, b) {
+  let dot = 0, aNorm = 0, bNorm = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; aNorm += a[i] ** 2; bNorm += b[i] ** 2; }
+  return dot / (Math.sqrt(aNorm) * Math.sqrt(bNorm) || 1);
+}
+async function embedMappingText(text) {
+  const model = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
+  if (!model) return null;
+  const response = await azureClient.embeddings.create({ model, input: text });
+  return response.data[0].embedding;
+}
+function mappingMemoryText(targetColumns, sourceColumns) {
+  return `Target layout: ${targetColumns.map(x => x.name).join(", ")}\nSource schema: ${sourceColumns.join(", ")}`;
+}
+async function retrieveApprovedMappings(targetColumns, sourceColumns) {
+  const embedding = await embedMappingText(mappingMemoryText(targetColumns, sourceColumns));
+  if (!embedding) return [];
+  return readRagStore()
+    .filter(item => Array.isArray(item.embedding))
+    .map(item => ({ ...item, score: cosineSimilarity(embedding, item.embedding) }))
+    .filter(item => item.score >= 0.72)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map(({ embedding: _embedding, ...item }) => item);
+}
+async function saveApprovedMapping({ sourceType, tableName, targetColumns, mappings }) {
+  const approvedMappings = mappings.filter(mapping => mapping.source);
+  if (!approvedMappings.length) return;
+  const sourceColumns = approvedMappings.map(mapping => mapping.source);
+  const embedding = await embedMappingText(mappingMemoryText(targetColumns, sourceColumns));
+  if (!embedding) return;
+  const store = readRagStore();
+  store.push({ id: Date.now().toString(), createdAt: new Date().toISOString(), sourceType, tableName, targetColumns, mappings: approvedMappings, embedding });
+  fs.mkdirSync(path.dirname(RAG_STORE_PATH), { recursive: true });
+  fs.writeFileSync(RAG_STORE_PATH, JSON.stringify(store.slice(-500), null, 2));
+}
 
 // ─── In-memory store for uploaded mapping Excel ────────────────────────────────
 // Reference mappings are session-scoped guidance only.  They are deliberately
@@ -356,9 +397,16 @@ app.post("/api/ai-mapping", async (req, res) => {
   const referenceContext = layoutReferences.length > 0
     ? `\nHistorical mapping assumptions for this layout (reference only; do not treat as ground truth):\n${JSON.stringify(layoutReferences.slice(0, 40), null, 2)}`
     : "";
+  let ragContext = "";
+  try {
+    const examples = await retrieveApprovedMappings(effectiveTargets, sourceColumns);
+    if (examples.length) ragContext = `\nPreviously user-approved mappings (reference only; verify against the current schema):\n${JSON.stringify(examples, null, 2)}`;
+  } catch (err) {
+    console.warn("RAG retrieval skipped:", err.message);
+  }
 
   const prompt = `You are a senior data integration architect with expertise in ETL pipelines.
-${referenceContext}
+${referenceContext}${ragContext}
 
 Map the latest uploaded target layout to the available source schema. A source may
 come from a different table; identify every referenced table and request a join
@@ -581,6 +629,18 @@ app.post("/api/extract", async (req, res) => {
     }
 
     send(`\n🎉 Extraction complete! ${fileIndex} file(s), ${rowsWritten.toLocaleString()} total rows.`);
+    try {
+      await saveApprovedMapping({
+        sourceType,
+        tableName: fromClause || tableName,
+        targetColumns: Array.isArray(targetColumns) ? targetColumns : activeLayout,
+        mappings,
+      });
+      if (process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT) send("🧠 Saved the approved mapping to RAG memory.");
+    } catch (ragError) {
+      console.warn("RAG save skipped:", ragError.message);
+      send("⚠ Extraction succeeded, but the approved mapping could not be saved to RAG memory.");
+    }
     done();
   } catch (err) {
     res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
