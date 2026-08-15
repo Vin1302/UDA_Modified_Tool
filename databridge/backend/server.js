@@ -57,9 +57,9 @@ async function embedMappingText(text) {
     throw new Error("Azure endpoint and API key are required for RAG embeddings.");
   }
 
-  // Foundry serverless embedding deployments use the Model Inference endpoint,
-  // not the OpenAI-compatible /openai/v1 endpoint used by the GPT deployment.
-  const response = await fetch(`${azureEndpoint}/models/embeddings?api-version=2024-05-01-preview`, {
+  // This Foundry project uses the current OpenAI-compatible v1 embedding API.
+  // The older Model Inference preview API is not supported by all Foundry projects.
+  const response = await fetch(`${azureEndpoint}/openai/v1/embeddings?api-version=v1`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
