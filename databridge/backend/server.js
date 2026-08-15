@@ -34,7 +34,18 @@ if (process.env.NODE_ENV === "production") {
 
 // ─── Azure OpenAI Client ───────────────────────────────────────────────────────
 const DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o"; // your deployment name
-const azureEndpoint = String(process.env.AZURE_OPENAI_ENDPOINT || "").replace(/\/+$/, "").replace(/\/openai\/v1$/, "");
+function normalizeAzureEndpoint(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    // Foundry's portal can copy an endpoint with a route already appended.
+    // Keep only protocol and host so every API request starts from one known base.
+    return new URL(raw).origin;
+  } catch {
+    return raw.replace(/\/+$/, "").replace(/\/(?:openai\/v1|models)$/, "");
+  }
+}
+const azureEndpoint = normalizeAzureEndpoint(process.env.AZURE_OPENAI_ENDPOINT);
 // Foundry's OpenAI-compatible v1 API uses no dated api-version parameter.
 const azureClient = new OpenAI({
   apiKey: process.env.AZURE_OPENAI_API_KEY,
