@@ -12,7 +12,7 @@ const xlsx = require("xlsx");
 const sql = require("mssql");
 const { Pool } = require("pg");
 const mysql = require("mysql2/promise");
-const { AzureOpenAI } = require("openai");
+const OpenAI = require("openai");
 const path = require("path");
 const fs = require("fs");
 const { pipeline } = require("stream");
@@ -34,11 +34,11 @@ if (process.env.NODE_ENV === "production") {
 
 // ─── Azure OpenAI Client ───────────────────────────────────────────────────────
 const DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o"; // your deployment name
-const azureClient = new AzureOpenAI({
-  endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+const azureEndpoint = String(process.env.AZURE_OPENAI_ENDPOINT || "").replace(/\/+$/, "").replace(/\/openai\/v1$/, "");
+// Foundry's OpenAI-compatible v1 API uses no dated api-version parameter.
+const azureClient = new OpenAI({
   apiKey: process.env.AZURE_OPENAI_API_KEY,
-  deployment: DEPLOYMENT,
-  apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-10-21",
+  baseURL: `${azureEndpoint}/openai/v1/`,
 });
 
 // ─── In-memory store for uploaded mapping Excel ────────────────────────────────
