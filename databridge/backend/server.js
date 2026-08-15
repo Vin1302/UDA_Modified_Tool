@@ -291,7 +291,7 @@ Rules:
       { role: "system", content: "You are a data mapping expert. Return only valid JSON." },
       { role: "user", content: prompt }
       ],
-      max_completion_tokens: 2000, temperature: 0.1,
+      max_completion_tokens: 2000,
     });
 
     const text = response.choices[0].message.content.replace(/```json|```/g, "").trim();
@@ -325,7 +325,7 @@ Help the user review, understand, and modify mappings. Be concise (max 3 sentenc
       { role: "system", content: systemPrompt },
       ...messages
       ],
-      max_completion_tokens: 500, temperature: 0.3,
+      max_completion_tokens: 500,
     });
     res.json({ success: true, reply: response.choices[0].message.content });
   } catch (err) {
