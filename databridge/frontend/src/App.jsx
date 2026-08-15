@@ -69,6 +69,7 @@ export default function DataBridgeAI() {
   const [includeHeader, setIncludeHeader] = useState(true);
   const [extractLog, setExtractLog] = useState([]);
   const [extractFiles, setExtractFiles] = useState([]);
+  const [extractQuery, setExtractQuery] = useState("");
   const [extracting, setExtracting] = useState(false);
   const [done, setDone] = useState(false);
   const [chat, setChat] = useState([]);
@@ -219,7 +220,7 @@ export default function DataBridgeAI() {
 
   // ── Extract ──────────────────────────────────────────────────────────────────
   async function startExtraction() {
-    setExtracting(true); setExtractLog([]); setExtractFiles([]);
+    setExtracting(true); setExtractLog([]); setExtractFiles([]); setExtractQuery("");
     const res = await fetch(`${API}/api/extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -236,6 +237,7 @@ export default function DataBridgeAI() {
           const obj = JSON.parse(line.slice(5));
           if (obj.log) setExtractLog(p => [...p, obj.log]);
           if (obj.file) setExtractFiles(p => [...p, obj.file]);
+          if (obj.query) setExtractQuery(obj.query);
           if (obj.done) setDone(true);
           if (obj.error) setExtractLog(p => [...p, `❌ ${obj.error}`]);
         } catch {}
@@ -630,6 +632,13 @@ export default function DataBridgeAI() {
                   <div style={{ color:"#334155" }}>{mappings.slice(0,3).map(m=>m.target).join(delimiter)}{delimiter}...</div>
                 </div>
 
+                {extractQuery && (
+                  <div style={{ background:"#0a0e1a", padding:"12px 16px", borderRadius:8, marginBottom:20, border:"1px solid #1e3a5f" }}>
+                    <div style={{ color:"#64748b", fontSize:11, marginBottom:7, textTransform:"uppercase", letterSpacing:"0.06em" }}>Query used for extraction</div>
+                    <pre style={{ margin:0, whiteSpace:"pre-wrap", overflowWrap:"anywhere", color:"#93c5fd", fontSize:11, lineHeight:1.6 }}>{extractQuery}</pre>
+                  </div>
+                )}
+
                 {!extracting && !done && (
                   <button className="btn btn-green" style={{ width:"100%", fontSize:14, padding:"12px" }} onClick={startExtraction}>▶ Start Extraction</button>
                 )}
@@ -664,7 +673,7 @@ export default function DataBridgeAI() {
                 {done && (
                   <div style={{ marginTop:16, padding:"14px 16px", background:"#0f2a14", border:"1px solid #14532d", borderRadius:8 }}>
                     <div style={{ fontSize:14, color:"#4ade80", fontWeight:600, marginBottom:8, fontFamily:"'Space Grotesk',sans-serif" }}>🎉 Pipeline Complete!</div>
-                    <button className="btn" style={{ fontSize:12, padding:"8px 14px" }} onClick={()=>{setStep(0);setConnected(false);setSourceType(null);setMappings([]);setExtractLog([]);setExtractFiles([]);setDone(false);setChat([])}}>
+                    <button className="btn" style={{ fontSize:12, padding:"8px 14px" }} onClick={()=>{setStep(0);setConnected(false);setSourceType(null);setMappings([]);setExtractLog([]);setExtractFiles([]);setExtractQuery("");setDone(false);setChat([])}}>
                       ↺ New Extraction
                     </button>
                   </div>

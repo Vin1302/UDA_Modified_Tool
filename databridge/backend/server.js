@@ -110,6 +110,26 @@ function normalizeMappingSource(mapping) {
   };
 }
 
+function mappingTargetKey(value) {
+  return String(value || "").trim().replace(/\s+/g, "_").toUpperCase();
+}
+
+function alignMappingsToLayout(mappings, targets) {
+  const returnedByTarget = new Map(mappings.map(mapping => [mappingTargetKey(mapping.target), mapping]));
+  return targets
+    .filter(target => target?.name)
+    .map(target => normalizeMappingSource(returnedByTarget.get(mappingTargetKey(target.name)) || {
+      target: target.name,
+      source: null,
+      sourceTable: null,
+      sourceColumn: null,
+      confidence: "low",
+      reason: "No matching source column returned by the AI.",
+      transform: null,
+    }))
+    .map(mapping => ({ ...mapping, target: mappingTargetKey(mapping.target) }));
+}
+
 function readSpecification(filePath) {
   const workbook = xlsx.readFile(filePath, { cellDates: true });
   const ignored = new Set(["coverpage", "instructions", "summary", "source", "db details", "keyinfo", "operator crossref"]);
@@ -119,11 +139,12 @@ function readSpecification(filePath) {
   for (const sheetName of workbook.SheetNames) {
     if (ignored.has(sheetName.toLowerCase())) continue;
     const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" });
-    const headerRow = rows.findIndex(row => row.some(cell => /source column name|expected value|field(?:\s+(?:header|column))?\s+name|target.*field/i.test(String(cell))));
+    const isTargetHeader = value => /^(field(?:\s+(?:header|column))?\s+name|target.*field|source column name|column name)$/i.test(String(value).trim());
+    const headerRow = rows.findIndex(row => row.some(isTargetHeader) && row.some(cell => /^(data\s*type|description|expected value)$/i.test(String(cell).trim())));
     if (headerRow < 0) continue;
     const headers = rows[headerRow].map(value => String(value).trim());
-    const targetIndex = headers.findIndex(h => /^(field(?:\s+(?:header|column))?\s+name|target.*field|source column name|column name)$/i.test(h)) >= 0
-      ? headers.findIndex(h => /^(field(?:\s+(?:header|column))?\s+name|target.*field|source column name|column name)$/i.test(h))
+    const targetIndex = headers.findIndex(isTargetHeader) >= 0
+      ? headers.findIndex(isTargetHeader)
       : 0;
     const typeIndex = headers.findIndex(h => /data\s*type/i.test(h));
     const descriptionIndex = headers.findIndex(h => /description|expected value/i.test(h));
@@ -359,7 +380,11 @@ Rules:
     const result = JSON.parse(text);
     const mappings = Array.isArray(result) ? result : result.mappings;
     if (!Array.isArray(mappings)) throw new Error("Azure OpenAI returned an invalid mapping response");
-    res.json({ success: true, mappings: mappings.map(normalizeMappingSource), joinPlan: result.joinPlan || { required: false, tables: [], conditions: [], notes: "" } });
+    res.json({
+      success: true,
+      mappings: alignMappingsToLayout(mappings, effectiveTargets),
+      joinPlan: result.joinPlan || { required: false, tables: [], conditions: [], notes: "" },
+    });
   } catch (err) {
     console.error("Azure OpenAI mapping failed:", err);
     const detail = err?.error?.message || err?.response?.data?.error?.message || err.message;
@@ -416,6 +441,7 @@ app.post("/api/extract", async (req, res) => {
 
   const send = (msg) => res.write(`data: ${JSON.stringify({ log: msg })}\n\n`);
   const sendFile = (name) => res.write(`data: ${JSON.stringify({ file: name })}\n\n`);
+  const sendQuery = (query) => res.write(`data: ${JSON.stringify({ query })}\n\n`);
   const done = () => res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
 
   try {
@@ -433,6 +459,8 @@ app.post("/api/extract", async (req, res) => {
       .join(", ");
 
     if (!selectClauses) throw new Error("At least one confirmed source mapping is required");
+    const extractionQuery = `SELECT ${selectClauses} FROM ${sourceFrom}`;
+    sendQuery(extractionQuery);
 
     const outputValue = value => value === null || value === undefined ? "" : String(value)
       .replace(/[\r\n]/g, " ").replaceAll(delim, " ");
@@ -471,7 +499,7 @@ app.post("/api/extract", async (req, res) => {
 
       const request = pool.request();
       request.stream = true;
-      request.query(`SELECT ${selectClauses} FROM ${sourceFrom}`);
+      request.query(extractionQuery);
 
       await new Promise((resolve, reject) => {
         request.on("row", async (row) => {
@@ -511,7 +539,7 @@ app.post("/api/extract", async (req, res) => {
       let fname = openFile();
       send(`📦 Writing ${fname}...`);
 
-      const query = client.query(new (require("pg")).Cursor(`SELECT ${selectClauses} FROM ${sourceFrom}`));
+      const query = client.query(new (require("pg")).Cursor(extractionQuery));
       const readBatch = () => new Promise((res, rej) => query.read(500, (err, rows) => err ? rej(err) : res(rows)));
 
       let batch;
