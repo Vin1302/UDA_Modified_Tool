@@ -52,6 +52,8 @@ export default function DataBridgeAI() {
   const [connError, setConnError] = useState("");
   const [tableName, setTableName] = useState("customers");
   const [targetCols, setTargetCols] = useState(DEFAULT_TARGET_COLS);
+  const [layouts, setLayouts] = useState([]);
+  const [selectedLayout, setSelectedLayout] = useState("");
   const [sourceSchema, setSourceSchema] = useState([]);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [newCol, setNewCol] = useState({ name:"", type:"VARCHAR(100)", required:false, description:"" });
@@ -107,9 +109,12 @@ export default function DataBridgeAI() {
       const res = await fetch(`${API}/api/upload-mapping`, { method: "POST", body: form });
       const data = await res.json();
       if (data.success) {
-        setTargetCols(data.targetColumns);
+        const loadedLayouts = data.layouts || [];
+        setLayouts(loadedLayouts);
+        setSelectedLayout(loadedLayouts[0]?.name || "");
+        setTargetCols(loadedLayouts[0]?.targetColumns || []);
         setMappings([]); setMappingConfirmed(false);
-        setUploadMsg(`✓ Latest layout loaded: ${data.targetColumns.length} fields; ${data.referenceCount} historical assumptions kept as reference`);
+        setUploadMsg(`✓ Loaded ${loadedLayouts.length} layouts. Select a tab to map each output separately.`);
       } else setUploadMsg(`Error: ${data.error}`);
     } catch { setUploadMsg("Upload failed — is server running?"); }
   }
@@ -151,7 +156,7 @@ export default function DataBridgeAI() {
       const res = await fetch(`${API}/api/ai-mapping`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceColumns, sourceTables: tableName.split(",").map(x=>x.trim()).filter(Boolean), targetColumns: targetCols })
+        body: JSON.stringify({ sourceColumns, sourceTables: tableName.split(",").map(x=>x.trim()).filter(Boolean), targetColumns: targetCols, layoutName: selectedLayout })
       });
       const data = await res.json();
       if (data.success) {
@@ -218,6 +223,12 @@ export default function DataBridgeAI() {
   }
 
   const stepDone = [connected, targetCols.length > 0, mappings.length > 0, mappings.length > 0, done];
+  const selectLayout = (layout) => {
+    setSelectedLayout(layout.name);
+    setTargetCols(layout.targetColumns);
+    setMappings([]); setJoinPlan({ required:false, tables:[], conditions:[], notes:"" });
+    setMappingConfirmed(false); setDone(false);
+  };
 
   // ── Styles ───────────────────────────────────────────────────────────────────
   return (
@@ -334,9 +345,19 @@ export default function DataBridgeAI() {
             <h2 style={{ fontFamily:"'Space Grotesk',sans-serif", fontSize:22, fontWeight:600, color:"#f1f5f9", marginBottom:4 }}>Define Extraction Schema</h2>
             <p style={{ color:"#64748b", fontSize:13, marginBottom:22 }}>Set target columns and optionally fetch source schema from your connected database</p>
 
+            {layouts.length > 0 && <div className="card" style={{ marginBottom:16, padding:14 }}>
+              <div style={{ fontSize:11, color:"#4b6074", marginBottom:10, textTransform:"uppercase", letterSpacing:".06em" }}>ClaimSphere output layouts ({layouts.length})</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
+                {layouts.map(layout => <button key={layout.name} className="btn btn-ghost" onClick={()=>selectLayout(layout)} style={{ padding:"6px 10px", fontSize:11, borderColor:selectedLayout===layout.name?"#2563eb":undefined, color:selectedLayout===layout.name?"#60a5fa":undefined }}>
+                  {layout.name} <span style={{ opacity:.65 }}>({layout.targetColumns.length})</span>
+                </button>)}
+              </div>
+              <div style={{ fontSize:11, color:"#64748b", marginTop:9 }}>Map, review, confirm, and export one selected layout at a time. The target fields shown below belong only to <b style={{ color:"#94a3b8" }}>{selectedLayout}</b>.</div>
+            </div>}
+
             <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:16, marginBottom:20 }}>
               <div className="card">
-                <div style={{ fontSize:11, color:"#4b6074", marginBottom:14, textTransform:"uppercase", letterSpacing:"0.06em" }}>Target Column Layout</div>
+                <div style={{ fontSize:11, color:"#4b6074", marginBottom:14, textTransform:"uppercase", letterSpacing:"0.06em" }}>Target Column Layout {selectedLayout && `— ${selectedLayout}`}</div>
                 <div style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr .5fr 2fr .4fr", gap:8, padding:"5px 0", borderBottom:"1px solid #1e3a5f", marginBottom:8 }}>
                   {["Name","Type","Req","Description",""].map(h => <div key={h} style={{ fontSize:10, color:"#4b6074", fontWeight:600, textTransform:"uppercase" }}>{h}</div>)}
                 </div>
@@ -408,7 +429,7 @@ export default function DataBridgeAI() {
         {step === 2 && (
           <div>
             <h2 style={{ fontFamily:"'Space Grotesk',sans-serif", fontSize:22, fontWeight:600, color:"#f1f5f9", marginBottom:4 }}>AI Column Mapping</h2>
-            <p style={{ color:"#64748b", fontSize:13, marginBottom:22 }}>Azure GPT-4o maps the current specification against source columns; historical assumptions are reference only.</p>
+            <p style={{ color:"#64748b", fontSize:13, marginBottom:22 }}>Mapping layout: <b style={{ color:"#60a5fa" }}>{selectedLayout || "custom layout"}</b>. Azure GPT-4o uses historical assumptions only as reference.</p>
 
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
               <div className="card">

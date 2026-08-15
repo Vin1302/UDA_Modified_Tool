@@ -46,6 +46,7 @@ const azureClient = new AzureOpenAI({
 // not sent anywhere for fine tuning or stored as "learned" model data.
 let referenceMappings = [];
 let activeLayout = [];
+let activeLayouts = {};
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z_][A-Za-z0-9_$]*){0,2}$/;
 const safeIdentifier = (value, label = "identifier") => {
@@ -106,10 +107,16 @@ app.post("/api/upload-mapping", upload.single("file"), (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     const parsed = readSpecification(req.file.path);
     if (!parsed.targets.length) return res.status(400).json({ error: "No target layout fields were found in this specification" });
+    activeLayouts = parsed.targets.reduce((groups, target) => {
+      (groups[target.layout] ||= []).push(target);
+      return groups;
+    }, {});
     activeLayout = parsed.targets;
     referenceMappings = parsed.references;
     fs.unlinkSync(req.file.path);
-    res.json({ success: true, targetColumns: activeLayout, referenceCount: referenceMappings.length, sheets: parsed.sheets });
+    res.json({ success: true,
+      layouts: Object.entries(activeLayouts).map(([name, targetColumns]) => ({ name, targetColumns, referenceCount: referenceMappings.filter(x => x.layout === name).length })),
+      referenceCount: referenceMappings.length, sheets: parsed.sheets });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -244,11 +251,15 @@ app.post("/api/schema", async (req, res) => {
 // ROUTE: AI Column Mapping via Azure OpenAI
 // ─────────────────────────────────────────────────────────────────────────────
 app.post("/api/ai-mapping", async (req, res) => {
-  const { sourceColumns, targetColumns, sourceTables } = req.body;
-  const effectiveTargets = activeLayout.length ? activeLayout : targetColumns;
+  const { sourceColumns, targetColumns, sourceTables, layoutName } = req.body;
+  const effectiveTargets = activeLayouts[layoutName] || (activeLayout.length ? activeLayout : targetColumns);
+  const layoutReferences = layoutName ? referenceMappings.filter(x => x.layout === layoutName) : referenceMappings;
+  if (!process.env.AZURE_OPENAI_ENDPOINT || !process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_OPENAI_ENDPOINT.includes("YOUR-")) {
+    return res.status(503).json({ success: false, error: "Azure OpenAI is not configured. Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_DEPLOYMENT in backend/.env, then restart the backend." });
+  }
 
-  const referenceContext = referenceMappings.length > 0
-    ? `\nHistorical mapping assumptions (reference only; do not treat as ground truth):\n${JSON.stringify(referenceMappings.slice(0, 40), null, 2)}`
+  const referenceContext = layoutReferences.length > 0
+    ? `\nHistorical mapping assumptions for this layout (reference only; do not treat as ground truth):\n${JSON.stringify(layoutReferences.slice(0, 40), null, 2)}`
     : "";
 
   const prompt = `You are a senior data integration architect with expertise in ETL pipelines.
@@ -289,7 +300,9 @@ Rules:
     if (!Array.isArray(mappings)) throw new Error("Azure OpenAI returned an invalid mapping response");
     res.json({ success: true, mappings, joinPlan: result.joinPlan || { required: false, tables: [], conditions: [], notes: "" } });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Azure OpenAI mapping failed:", err);
+    const detail = err?.error?.message || err?.response?.data?.error?.message || err.message;
+    res.status(502).json({ success: false, error: `Azure OpenAI mapping failed: ${detail}` });
   }
 });
 
