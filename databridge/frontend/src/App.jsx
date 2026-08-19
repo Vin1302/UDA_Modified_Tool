@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-const API = process.env.REACT_APP_API_URL || "http://localhost:5000";
+const API = process.env.REACT_APP_API_URL || "";
 
 const STEPS = ["Connect", "Schema", "AI Mapping", "Confirm", "Extract"];
 
@@ -473,7 +473,7 @@ export default function DataBridgeAI() {
         {step === 2 && (
           <div>
             <h2 style={{ fontFamily:"'Space Grotesk',sans-serif", fontSize:22, fontWeight:600, color:"#f1f5f9", marginBottom:4 }}>AI Column Mapping</h2>
-            <p style={{ color:"#64748b", fontSize:13, marginBottom:22 }}>Mapping layout: <b style={{ color:"#60a5fa" }}>{selectedLayout || "custom layout"}</b>. Microsoft Foundry GPT-5.6 Sol uses historical assumptions only as reference.</p>
+            <p style={{ color:"#64748b", fontSize:13, marginBottom:22 }}>Mapping layout: <b style={{ color:"#60a5fa" }}>{selectedLayout || "custom layout"}</b>. The configured model uses historical assumptions only as reference.</p>
 
             <div className="card" style={{ display:"flex", alignItems:"end", gap:10, marginBottom:16 }}>
               <div style={{ flex:1 }}>
@@ -506,7 +506,7 @@ export default function DataBridgeAI() {
               <div className="card" style={{ textAlign:"center", padding:40 }}>
                 <div style={{ fontSize:40, marginBottom:14 }}>🧠</div>
                 <div style={{ fontFamily:"'Space Grotesk',sans-serif", fontSize:16, color:"#e2e8f0", marginBottom:8 }}>Ready for AI Analysis</div>
-                <div style={{ fontSize:13, color:"#64748b", marginBottom:24 }}>Microsoft Foundry GPT-5.6 Sol will propose mappings from the latest layout and source schema.</div>
+                <div style={{ fontSize:13, color:"#64748b", marginBottom:24 }}>The configured model will propose mappings from the latest layout and source schema.</div>
                 <button className="btn" style={{ fontSize:14, padding:"12px 28px" }} onClick={runAIMapping} disabled={aiThinking}>
                   {aiThinking ? <span className="pulse">Analyzing...</span> : "⚡ Run AI Mapping"}
                 </button>

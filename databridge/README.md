@@ -65,7 +65,7 @@ Now open `.env` in VS Code and fill in:
 ```env
 AZURE_OPENAI_ENDPOINT=https://YOUR-RESOURCE.openai.azure.com
 AZURE_OPENAI_API_KEY=your_key_here
-AZURE_OPENAI_DEPLOYMENT=gpt-4o
+AZURE_OPENAI_DEPLOYMENT=your_model_deployment
 ```
 
 **Where to find these values:**

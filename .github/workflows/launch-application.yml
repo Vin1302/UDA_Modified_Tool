@@ -1,0 +1,82 @@
+name: Launch application
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: databridge
+    env:
+      AZURE_OPENAI_ENDPOINT: https://example.invalid
+      AZURE_OPENAI_API_KEY: pipeline-placeholder
+      AZURE_OPENAI_DEPLOYMENT: model-deployment
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            databridge/backend/pnpm-lock.yaml
+            databridge/frontend/pnpm-lock.yaml
+
+      - name: Install backend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: databridge/backend
+
+      - name: Test backend
+        run: pnpm test
+        working-directory: databridge/backend
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: databridge/frontend
+
+      - name: Build frontend
+        run: pnpm run build
+        working-directory: databridge/frontend
+
+      - name: Build and launch containers
+        run: docker compose up --build --detach
+
+      - name: Wait for application
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+
+      - name: Verify web application
+        run: curl --fail --silent http://localhost/ >/dev/null
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop containers
+        if: always()
+        run: docker compose down --volumes

@@ -33,7 +33,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // ─── Azure OpenAI Client ───────────────────────────────────────────────────────
-const DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o"; // your deployment name
+const DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT || "model-deployment";
 function normalizeAzureEndpoint(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -69,7 +69,7 @@ async function embedMappingText(text) {
   }
 
   // Foundry serverless deployments use the embedding deployment in the path.
-  // This differs from GPT-5.6-Sol's OpenAI-compatible v1 chat endpoint.
+  // Embeddings use a deployment-specific route rather than the chat-compatible route.
   const embeddingUrl = `${azureEndpoint}/openai/deployments/${encodeURIComponent(model)}/embeddings?api-version=2025-04-01-preview`;
   const response = await fetch(embeddingUrl, {
     method: "POST",
