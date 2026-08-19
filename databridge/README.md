@@ -26,7 +26,7 @@ Nginx (port 80)  ─────────────────────
 | Tool | Required | Download |
 |------|----------|----------|
 | VS Code | ✅ Yes | https://code.visualstudio.com |
-| Node.js 20+ | ✅ Yes | https://nodejs.org |
+| Node.js 22+ | ✅ Yes | https://nodejs.org |
 | Git | ✅ Yes | https://git-scm.com |
 | Azure OpenAI resource | ✅ Yes | Azure Portal |
 | Docker Desktop | ⚪ Optional | https://docker.com |
